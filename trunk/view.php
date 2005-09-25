@@ -1,0 +1,53 @@
+<?php
+/*
+ * view.php - display a resource to a browser
+ * Copyright (c) 2005 David Frese
+ */
+
+/*
+ * This file is part of Xeemes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING.  If not, write to
+ * the Free Software Foundation, 59 Temple Place - Suite 330,
+ * Boston, MA 02111-1307, USA.
+ */
+
+require_once('src/utils.inc');
+define_globals(0);
+
+require_once('src/resources.inc');
+
+function view($location, $args) {
+  $resource = get_resource($location, $args);
+  if (($resource->type() & XEEMES_RESOURCE_XML) > 0) {
+    if (!$resource->exists()) {
+      print('<html><body>404 - not found</body></html>'); // TODO
+    } else {
+      print($resource->xmlContent());
+    }
+  } else {
+    if (!$resource->exists())
+      header('HTTP/1.1 404 Not found');
+    else if ($resource->original())
+      header('Location: '.$resource->url());
+    else {
+      // header Content-type ??
+      print($resource->stringContent());
+    }
+  }
+}
+
+view($_SERVER['PATH_INFO'], $_SERVER['argv']);
+
+?>

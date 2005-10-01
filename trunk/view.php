@@ -39,11 +39,9 @@ function view($location, $args) {
   } else {
     if (!$resource->exists())
       header('HTTP/1.1 404 Not found');
-    else if ($resource->original())
-      header('Location: '.$resource->url());
     else {
       // header Content-type ??
-      print($resource->stringContent());
+      $resource->outputContent();
     }
   }
 }

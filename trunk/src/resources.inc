@@ -118,8 +118,17 @@ class Resource {
     return file_get_contents($this->filename);
   }
 
-  function original() {
+  function isOriginal() {
     return true;
+  }
+
+  function outputContent() {
+    if (isOriginal())
+      // TODO: this is supposed to be slow; and not very suitable for
+      // very large files, resp. low bandwidths
+      readfile($this->filename);
+    else
+      print($this->stringContent());
   }
 
   function get_location() {

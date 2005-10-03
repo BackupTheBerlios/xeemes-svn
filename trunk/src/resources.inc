@@ -198,7 +198,9 @@ class WikipediaResource extends XMLResource {
 
   function domContent() {
     $parser = new WikipediaParser();
-    return $parser->parse($this->stringContent());
+    // TODO: look at charset meta-data
+    return $parser->parse(iconv('iso-8859-1', 'utf-8',
+				$this->stringContent()));
   }
 }
 

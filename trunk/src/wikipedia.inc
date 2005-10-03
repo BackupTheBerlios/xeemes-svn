@@ -58,9 +58,8 @@ class WikipediaParser {
   }
 
   function parse($text) {
-    $lines = preg_replace('/[\r]?\n/', '</xeemes:line><xeemes:line>', $text);
-    $xml_text = '<html xmlns:xeemes="'.XEEMES_NS_URI.'"><body><xeemes:line>'.
-      $lines.'</xeemes:line></body></html>';
+    $xml_text = '<html xmlns:xeemes="'.XEEMES_NS_URI.'"><body>'.
+      $text.'</body></html>';
     $this->document = DOMDocument::loadXML($xml_text);
 
     $this->process_lines();
@@ -82,6 +81,47 @@ class WikipediaParser {
   }
 
   function process_lines() {
+    // split text nodes at line breaks
+    $first = $this->document->documentElement->firstChild->firstChild;
+    $line = array();
+    while ($first) {
+      if (($first->nodeType == XML_TEXT_NODE) &&
+	  (preg_match('/[\r]?\n/', $first->textContent))) {
+	$pos = strpos($first->textContent, "\n");
+	$dim = 1;
+	$pos2 = strpos($first->textContent, "\r\n");
+	if (($pos2 !== false) && ($pos2 < $pos)) {
+	  $pos = $pos2;
+	  $dim = 2;
+	}
+	$s1 = $this->document->createTextNode(substr($first->textContent,
+						     0, $pos));
+	$s2 = $this->document->createTextNode(substr($first->textContent,
+						     $pos+$dim));
+	$line []= $s1;
+	$xl = $this->document->createElementNS(XEEMES_NS_URI,
+					       'xeemes:line');
+	foreach ($line as $item)
+	  $xl->appendChild($item);
+	$line = array();
+	$first->parentNode->insertBefore($xl, $first);
+	$first->parentNode->replaceChild($s2, $first);
+	$first = $s2;
+      } else {
+	$line []= $first; //$first->cloneNode(true);
+	$next = $first->nextSibling;
+	$first->parentNode->removeChild($first);
+	$first = $next;
+      }
+    }
+    if (count($line) > 0) {
+      $xl = $this->document->createElementNS(XEEMES_NS_URI,
+					     'xeemes:line');
+      foreach ($line as $item)
+	$xl->appendChild($item);
+      $this->document->documentElement->firstChild->appendChild($xl);
+    }
+
     // TODO: enumerate lines for error messages?
     $next_line = $this->document->documentElement->firstChild->firstChild;
     while ($next_line) {

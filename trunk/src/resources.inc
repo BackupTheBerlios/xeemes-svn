@@ -151,7 +151,7 @@ class XMLResource extends Resource {
   }
 
   function extensions() {
-    return array('xml');
+    return array('xml', 'xsl');
   }
 
   function domContent() {
@@ -171,7 +171,7 @@ class XMLResource extends Resource {
 
   function convert_special_tags($doc) {
     include_resources($doc, $doc->documentElement, array($this->location));
-    replace_special_tags($doc, $doc->documentElement);
+    replace_special_tags($this, $doc, $doc->documentElement);
   }
 }
 
@@ -299,7 +299,52 @@ function replace_node($oldnode, $newnodes) {
   $oldnode->parentNode->removeChild($oldnode);
 }
 
-function replace_special_tags($doc, $node) {
+function replace_special_tags($resource, $doc, $node) {
+  if ($node->nodeType == XML_ELEMENT_NODE) {
+    if ($node->prefix == 'xeemes') {
+      if ($node->localName == 'xsl-transformation') {
+	$new = replace_xsl_transformation($resource, $doc, $node);
+	replace_node($node, $new);
+      } else {
+	$node->parentNode->replaceChild($doc->createTextNode('Unknown special tag: '.$node->localName), $node);
+      }
+    } else {
+      foreach (nodelist2array($node->childNodes) as $child) {
+	replace_special_tags($resource, $doc, $child);
+      }
+    }
+  }
+}
+
+function replace_xsl_transformation($resource, $doc, $node) {
+  // TODO: Error checking
+  // load stylesheet
+  $stylesheet_res = get_resource($node->getAttribute('stylesheet'), array(),
+				 $resource->get_location());
+  $stylesheet = new XSLTProcessor();
+  $stylesheet->importStyleSheet($stylesheet_res->domContent());
+
+  // find first element node child
+  $docelement = null;
+  foreach (nodelist2array($node->childNodes) as $child) {
+    if ($child->nodeType == XML_ELEMENT_NODE) {
+      $docelement = $child;
+      break;
+    }
+  }
+  $doc2 = new DomDocument();
+  $doc2->appendChild($doc2->importNode($docelement, true));
+
+  $result_doc = $stylesheet->transformToDoc($doc2);
+  
+  $result_nodes = array();
+  foreach (nodelist2array($result_doc->childNodes) as $node) {
+    $result_nodes []= $doc->importNode($node, true);
+  }
+  return $result_nodes;
+  
+  //return $doc->importNode($result_doc->documentElement, true);
+  // TODO: recursive replace special tags?
 }
 
 ?>

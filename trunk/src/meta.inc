@@ -24,46 +24,47 @@
  */
 
 function load_meta_data($filename) {
-  $doc = domxml_open_file($filename);
-  $root = $doc->document_element();
+  $doc = DOMDocument::load($filename);
+  $root = $doc->documentElement;
   $result = get_meta_data_entry($root);
   return $result;
 }
 
 function get_meta_data_entry($node) {
   $entry = false;
-  foreach ($node->child_nodes() as $child) {
-    if ($child->node_type() == XML_ELEMENT_NODE) {
+  for ($i = 0; $i < $node->childNodes->length; $i++) {
+    $child = $node->childNodes->item($i);
+    if ($child->nodeType == XML_ELEMENT_NODE) {
       if (!is_array($entry)) $entry = array();
-      $entry[$child->node_name()] = get_meta_data_entry($child);
+      $entry[$child->nodeName] = get_meta_data_entry($child);
     }
   }
   if (!$entry)
-    $entry = $node->get_content();
+    $entry = $node->textContent;
   return $entry;
 }
 
 function save_meta_data($filename, $data) {
-  $doc = domxml_new_doc('1.0');
-  $doc->append_child(make_meta_data($doc, 'meta-data', $data));
-  $doc->dump_file($filename, false, true);
+  $doc = new DOMDocument();
+  $doc->appendChild(make_meta_data($doc, 'meta-data', $data));
+  $doc->save($filename);
 }
 
 function make_meta_data($doc, $name, $entry, $id = false) {
-  $node = $doc->create_element($name);
+  $node = $doc->createElement($name);
   if (is_array($entry)) {
     foreach ($entry as $subname => $subentry) {
       $this_id = $id;
       if ($id) $down_id = $id.'00'; else $down_id = false;
       $d = make_meta_data($doc, $subname, $subentry, $down_id);
       if ($id) {
-	$d->append_child($doc->create_attribute('id', $id));
+	$d->setAttribute('id', $id);
 	$id = $id+1;
       }
-      $node->append_child($d);
+      $node->appendChild($d);
     }
   } else {
-    $node->append_child($doc->create_text_node($entry));
+    $node->appendChild($doc->createTextNode($entry));
   }
   return $node;
 }

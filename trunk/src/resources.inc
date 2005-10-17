@@ -124,7 +124,7 @@ class Resource {
   }
 
   function outputContent() {
-    if (isOriginal())
+    if ($this->isOriginal())
       // TODO: this is supposed to be slow; and not very suitable for
       // very large files, resp. low bandwidths
       readfile($this->filename);

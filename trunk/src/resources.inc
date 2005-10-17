@@ -167,14 +167,13 @@ class XMLResource extends Resource {
       $layout = new Layout($class, $this->get_meta('layout-name'));
       $doc = $layout->process($doc, array()); // TODO parameters
     }
-    $this->convert_special_tags($doc); // TODO prevent mutual incs
+    $this->convert_special_tags($doc);
     // TODO transformations
     return $doc->saveXML();
   }
 
   function convert_special_tags($doc) {
-    include_resources($doc, $doc->documentElement, array($this->location));
-    replace_special_tags($this, $doc, $doc->documentElement);
+    replace_special_tags($this, $doc->documentElement);
   }
 }
 
@@ -230,67 +229,67 @@ class ImageResource extends Resource {
   }
 }
 
-function include_resources($doc, $node, $already_included_locations) {
-  if ($node->nodeType == XML_ELEMENT_NODE) {
-    if ($node->nodeName == 'xeemes:resource') {
-      $location = $node->attributes->getNamedItem('location')->nodeValue;
-      $name = $location;
-      // TODO: args: location, thumbnail, size, frame
-      $args = array();
+function include_resource($main_resource, $node,
+			  $already_included_locations) {
+  $doc = $node->ownerDocument;
+  $result = array();
 
-      $display_n = $node->attributes->getNamedItem('display');
-      $inline = $display_n && $display_n->nodeValue;
-      $resource = get_resource($location, $args,
-			       $already_included_locations[0]);
-      if (in_array($location, $already_included_locations)) {
-	replace_node($node,
-		     $doc->createTextNode('[Error: recursive '.
-					  'inclusion of '.$location.']'));
-	return;
-      } else {
-	$location = $resource->get_location();
-	array_unshift($already_included_locations, $location);
-      }
-      $type = $resource->type();
-      if ($inline) {
-	if (($type & XEEMES_RESOURCE_XML) > 0) {
-	  if ($resource->exists()) {
-	    $incl_doc = $resource->domContent();
-	    $incl_node = $doc->importNode($incl_doc->documentElement, true);
-	    $bodies = $incl_node->getElementsByTagName('body');
-	    replace_node($node, nodelist2array($bodies->item(0)->childNodes));
-	  } else {
-	    replace_node($node, $doc->createTextNode('['.$location.
-						     ' Not found]'));
-	  }
-	} else if (($type & XEEMES_RESOURCE_IMAGE) > 0) {
-	  $img = $doc->createElement('img');
-	  // TODO args
-	  $img->setAttribute('src', XEEMES_BASE_URL.'view.php'.$location);
-	  replace_node($node, $img);
-	} else if (($type & XEEMES_RESOURCE_DATA) > 0) {
-	  $obj = $doc->createElement('object');
-	  $obj->setAttribute('data', XEEMES_BASE_URL.'data/'.$location);
-	  // TODO type, args
-	}
-      } else {
-	$a = $doc->createElement('a');
-	if ($node->hasChildNodes()) {
-	  foreach (nodelist2array($node->childNodes) as $child)
-	    $a->appendChild($a, $doc->importNode($child, true));
-	} else
-	  $a->appendChild($doc->createTextNode($name));
-	$a->setAttribute('href', $resource->view_url()); // TODO args
-	replace_node($node, $a);
-      }
-    }
-    $child = $node->firstChild;
-    while ($child) {
-      $next = $child->nextSibling;
-      include_resources($doc, $child, $already_included_locations);
-      $child = $next;
-    }
+  $location = $node->attributes->getNamedItem('location')->nodeValue;
+  $name = $location;
+  // TODO: args: location, thumbnail, size, frame
+  $args = array();
+  
+  $display_n = $node->attributes->getNamedItem('display');
+  $inline = $display_n && $display_n->nodeValue;
+  $resource = get_resource($location, $args,
+			   $already_included_locations[0]);
+  if (in_array($location, $already_included_locations)) {
+    return $doc->createTextNode('[Error: recursive inclusion of '.
+				$location.']');
+  } else {
+    $location = $resource->get_location();
+    array_unshift($already_included_locations, $location);
   }
+  $type = $resource->type();
+  if ($inline) {
+    if (($type & XEEMES_RESOURCE_XML) > 0) {
+      if ($resource->exists()) {
+	$incl_doc = $resource->domContent();
+	replace_special_tags($main_resource, $incl_doc->documentElement,
+			     $already_included_locations);
+	$bodies = $incl_doc->getElementsByTagName('body');
+	$body = $bodies->item(0);
+	// TODO: heads?
+	$result = array();
+	foreach (nodelist2array($body->childNodes) as $child)
+	  $result []= $doc->importNode($child, true);
+      } else {
+	$err = $doc->createTextNode('['.$location.' not found]');
+	$result = $err;
+      }
+    } else if (($type & XEEMES_RESOURCE_IMAGE) > 0) {
+      $img = $doc->createElement('img');
+      // TODO args
+      $img->setAttribute('src', XEEMES_BASE_URL.'view.php'.$location);
+      $result = $img;
+    } else if (($type & XEEMES_RESOURCE_DATA) > 0) {
+      $obj = $doc->createElement('object');
+      $obj->setAttribute('data', XEEMES_BASE_URL.'data/'.$location);
+      // TODO type, args
+      $result = $obj;
+    }
+  } else {
+    $link = $doc->createElement('a');
+    if ($node->hasChildNodes()) {
+      foreach (nodelist2array($node->childNodes) as $child)
+	$link->appendChild($link, $doc->importNode($child, true));
+    } else
+      $link->appendChild($doc->createTextNode($name));
+    $link->setAttribute('href', $resource->view_url()); // TODO args
+    $result = $link;
+  }
+
+  return $result;
 }
 
 function replace_node($oldnode, $newnodes) {
@@ -302,26 +301,42 @@ function replace_node($oldnode, $newnodes) {
   $oldnode->parentNode->removeChild($oldnode);
 }
 
-function replace_special_tags($resource, $doc, $node) {
-  if ($node->nodeType == XML_ELEMENT_NODE) {
-    if ($node->prefix == 'xeemes') {
-      if ($node->localName == 'xsl-transformation') {
-	$new = replace_xsl_transformation($resource, $doc, $node);
-	replace_node($node, $new);
+function replace_special_tags($resource, $nodes,
+			      $already_included_locations = null) {
+  if (!$already_included_locations)
+    $already_included_locations = array($resource->location);
+
+  if (!is_array($nodes))
+    $nodes = array($nodes);
+
+  foreach ($nodes as $node) {
+    if ($node->nodeType == XML_ELEMENT_NODE) {
+      if ($node->namespaceURI == XEEMES_NS_URI) {
+	if ($node->localName == 'xsl-transformation') {
+	  $new = make_xsl_transformation($resource, $node);
+	  replace_node($node, $new);
+	} else if ($node->localName == 'resource') {
+	  $new = include_resource($resource, $node,
+				  $already_included_locations);
+	  replace_node($node, $new);
+	} else {
+	  $err = $node->ownerDocument->createTextNode('Unknown special tag: '.
+						      $node->localName);
+	  print_r($node->parentNode);
+	  $node->parentNode->replaceChild($err, $node);
+	}
       } else {
-	$node->parentNode->replaceChild($doc->createTextNode('Unknown special tag: '.$node->localName), $node);
-      }
-    } else {
-      foreach (nodelist2array($node->childNodes) as $child) {
-	replace_special_tags($resource, $doc, $child);
+	foreach (nodelist2array($node->childNodes) as $child)
+	  replace_special_tags($resource, $child, $already_included_locations);
       }
     }
   }
 }
 
-function replace_xsl_transformation($resource, $doc, $node) {
+function make_xsl_transformation($resource, $node) {
   // TODO: Error checking
   // load stylesheet
+  $doc = $node->ownerDocument;
   $stylesheet_res = get_resource($node->getAttribute('stylesheet'), array(),
 				 $resource->get_location());
   $stylesheet = new XSLTProcessor();

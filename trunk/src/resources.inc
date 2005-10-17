@@ -25,6 +25,7 @@
 
 require_once('transformation.inc');
 require_once('wikipedia.inc');
+require_once('meta.inc');
 
 define('XEEMES_RESOURCE_UNKNOWN',    1);
 define('XEEMES_RESOURCE_XML',        2);
@@ -160,8 +161,10 @@ class XMLResource extends Resource {
 
   function xmlContent() {
     $doc = $this->domContent();
-    if ($this->get_meta('layout')) {
-      $layout = new Layout($this->get_meta('layout')); // class:name?
+    if ($this->get_meta('layout-name')) {
+      $class = $this->get_meta('layout-class');
+      if (!$class) $class = 'simple';
+      $layout = new Layout($class, $this->get_meta('layout-name'));
       $doc = $layout->process($doc, array()); // TODO parameters
     }
     $this->convert_special_tags($doc); // TODO prevent mutual incs

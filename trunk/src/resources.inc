@@ -34,6 +34,8 @@ define('XEEMES_RESOURCE_HTML',       8);
 define('XEEMES_RESOURCE_DATA',      16);
 define('XEEMES_RESOURCE_WIKIPEDIA', 32);
 
+$allow_php = true;
+
 function get_resource($location, $args, $relation_location = '') {
   if (substr($location, 0, 1) != '/') {
     $info = pathinfo($relation_location);
@@ -167,6 +169,7 @@ class XMLResource extends Resource {
       $layout = new Layout($class, $this->get_meta('layout-name'));
       $doc = $layout->process($doc, array()); // TODO parameters
     }
+    $this->process_instructions($doc);
     $this->convert_special_tags($doc);
     // TODO transformations
     return $doc->saveXML();
@@ -175,12 +178,27 @@ class XMLResource extends Resource {
   function convert_special_tags($doc) {
     replace_special_tags($this, $doc->documentElement);
   }
+
+  function process_instructions($doc, $node = false) {
+    global $allow_php;
+    if ($node === false) $node = $doc->documentElement;
+    if ($node->nodeType == XML_PI_NODE) {
+      if (($node->target == 'php') && $allow_php) {
+	$text = eval_php($node->data);
+	$nodes = import_html_text($doc, $text);
+	replace_node($node, $nodes);
+      }
+    } else if ($node->nodeType == XML_ELEMENT_NODE) {
+      foreach (nodelist2array($node->childNodes) as $child)
+	$this->process_instructions($doc, $child);
+    }
+  }
 }
 
 class HTMLResource extends XMLResource {
   /* convert HTML -> DOM document */
   function extensions() {
-    return array('htm', 'html');
+    return array('htm', 'html', 'php');
   }
 
   function type() {
@@ -290,15 +308,6 @@ function include_resource($main_resource, $node,
   }
 
   return $result;
-}
-
-function replace_node($oldnode, $newnodes) {
-  if (!is_array($newnodes))
-    $newnodes = array($newnodes);
-  foreach ($newnodes as $child) {
-    $oldnode->parentNode->insertBefore($child, $oldnode);
-  }
-  $oldnode->parentNode->removeChild($oldnode);
 }
 
 function replace_special_tags($resource, $nodes,

@@ -37,4 +37,62 @@ function define_globals($script_distance) {
   define('XEEMES_BASE_DIR', $info2['dirname']);
 }
 
+function strpos_nested($text, $end_str, $start_str, $offset = 0) {
+  do {
+    $end_pos = strpos($text, $end_str, $offset);
+    $start_pos = strpos($text, $start_str, $offset);
+    if ($start_pos === false)
+      return $end_pos;
+    else if ($start_pos < $end_pos) {
+      $rec_pos = strpos_nested($text, $end_str, $start_str,
+			       $start_pos+strlen($start_str));
+      if ($rec_pos === false)
+	return false;
+      else
+	$offset = $rec_pos+strlen($end_str);
+    } else
+      return $end_pos;
+  } while ($offset < strlen($text));
+  return false;
+}
+
+function nodelist2array($nodelist) {
+  $result = array();
+  for ($i = 0; $i < $nodelist->length; $i++)
+    $result []= $nodelist->item($i);
+  return $result;
+}
+
+function replace_node($oldnode, $newnodes) {
+  if (!is_array($newnodes))
+    $newnodes = array($newnodes);
+  foreach ($newnodes as $child) {
+    $oldnode->parentNode->insertBefore($child, $oldnode);
+  }
+  $oldnode->parentNode->removeChild($oldnode);
+}
+
+function eval_php($program) {
+  ob_start();
+  eval($program);
+  $result = ob_get_contents();
+  ob_end_clean();
+  return $result;
+}
+
+function import_html_text($doc, $text) {
+   $xml_text = '<?xml version="1.0" encoding="UTF-8"?>'."\n".
+    '<doc>'.$text.'</doc>';
+  $xml = DOMDocument::loadXML($xml_text);
+  if (!$xml) {
+    return array($doc->createComment('Failed to load text as XML: '), // TODO: Error message?
+		 $doc->createTextNode($text));
+  } else {
+    $result = array();
+    foreach (nodelist2array($xml->documentElement->childNodes) as $ch)
+      $result []= $doc->importNode($ch);
+    return $result;
+  }
+}
+
 ?>

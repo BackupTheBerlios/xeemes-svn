@@ -25,31 +25,7 @@
 
 define('XEEMES_NS_URI', 'http://xeemes.org/schema');
 
-function strpos_nested($text, $end_str, $start_str, $offset = 0) {
-  do {
-    $end_pos = strpos($text, $end_str, $offset);
-    $start_pos = strpos($text, $start_str, $offset);
-    if ($start_pos === false)
-      return $end_pos;
-    else if ($start_pos < $end_pos) {
-      $rec_pos = strpos_nested($text, $end_str, $start_str,
-			       $start_pos+strlen($start_str));
-      if ($rec_pos === false)
-	return false;
-      else
-	$offset = $rec_pos+strlen($end_str);
-    } else
-      return $end_pos;
-  } while ($offset < strlen($text));
-  return false;
-}
-
-function nodelist2array($nodelist) {
-  $result = array();
-  for ($i = 0; $i < $nodelist->length; $i++)
-    $result []= $nodelist->item($i);
-  return $result;
-}
+require_once('utils.inc');
 
 class WikipediaParser {
   var $document;

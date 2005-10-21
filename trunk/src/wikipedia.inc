@@ -40,6 +40,7 @@ class WikipediaParser {
 
     $this->process_lines();
     $this->process_inliners($this->document->documentElement);
+    $this->process_pbrs();
     $this->post_processing();
 
     // header element inside
@@ -119,13 +120,15 @@ class WikipediaParser {
       $hr = $this->document->createElement('hr');
       $line->parentNode->replaceChild($hr, $line);
       return $hr->nextSibling;
-    } else if ($line->textContent == '') {
+    } else if (!$line->hasChildNodes()) {
       $pbr = $this->document->createElement('pbr');
       $line->parentNode->replaceChild($pbr, $line);
       return $pbr->nextSibling;
     } else {
-      foreach (nodelist2array($line->childNodes) as $child)
+      foreach (nodelist2array($line->childNodes) as $child) {
+	$line->removeChild($child);
 	$line->parentNode->insertBefore($child, $line);
+      }
       $next = $line->nextSibling;
       $line->parentNode->removeChild($line);
       return $next;
@@ -240,7 +243,7 @@ class WikipediaParser {
   /** */
   function post_processing($node = null) {
     if ($node == null) $node = $this->document->documentElement;
-    // TODO: pbr
+
     if ($node->nodeType == XML_ELEMENT_NODE) {
       //if ($node->namespaceURI == XEEMES_NS_URI) { //?? TODO
       if ($node->prefix == 'xeemes') {
@@ -257,6 +260,45 @@ class WikipediaParser {
 	foreach (nodelist2array($node->childNodes) as $child)
 	  $this->post_processing($child);
       }
+    }
+  }
+
+  function process_pbrs() {
+    $doc = $this->document;
+    $parent = $this->document->documentElement->firstChild;
+
+    $blocklevel_elements = array('ADDRESS', 'BLOCKQUOTE', 'CENTER', 'DIR', 
+				 'DIV', 'DL', 'FIELDSET', 'FORM', 'H1', 'H2', 
+				 'H3', 'H4', 'H5', 'H6', 'HR', 'ISINDEX', 
+				 'MENU', 'NOFRAMES', 'NOSCRIPT', 'OL', 'P', 
+				 'PRE', 'TABLE', 'UL',
+				 // The following elements may also be
+				 // considered block-level elements
+				 // since they may contain block-level
+				 // elements:
+				 'DD', 'DT', 'FRAMESET', 'LI', 'TBODY', 'TD', 
+				 'TFOOT', 'TH', 'THEAD', 'TR');
+    $stack = array();
+    foreach (nodelist2array($parent->childNodes) as $node) {
+      if ($node->nodeType == XML_ELEMENT_NODE) {
+	if ($node->nodeName == 'pbr') {
+	  if (count($stack) > 0) {
+	    $p_element = $doc->createElement('p');
+	    foreach ($stack as $thing) {
+	      $parent->removeChild($thing);
+	      $p_element->appendChild($thing);
+	    }
+	    $parent->replaceChild($p_element, $node);
+	    $stack = array();
+	  } else
+	    $parent->removeChild($node);
+	} else if (in_array(strtoupper($node->nodeName),
+			    $blocklevel_elements)) {
+	  $stack = array();
+	} else
+	  $stack []= $node;
+      } else
+	$stack []= $node;
     }
   }
 

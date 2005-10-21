@@ -102,9 +102,9 @@ class Resource {
   }
 
   function maybe_load_meta() {
-    if ($meta_data == null)
+    if ($this->meta_data == null)
       if (file_exists($this->meta_filename))
-	$meta_data = load_meta_data($this->meta_filename);
+	$this->meta_data = load_meta_data($this->meta_filename);
       else
 	$this->meta_data = array();
   }
@@ -163,10 +163,16 @@ class XMLResource extends Resource {
 
   function xmlContent() {
     $doc = $this->domContent();
-    if ($this->get_meta('layout-name')) {
-      $class = $this->get_meta('layout-class');
-      if (!$class) $class = 'simple';
-      $layout = new Layout($class, $this->get_meta('layout-name'));
+
+    // The XSL-Transformation removes PIs, hence we have to do it here too.
+    $this->process_instructions($doc);
+
+    $layout_name = $this->get_meta('layout-name');
+    if (!$layout_name) $layout_name = 'default';
+    $layout_class = $this->get_meta('layout-class');
+    if ($layout_name) {
+      // class can be false
+      $layout = new Layout($layout_class, $layout_name);
       $doc = $layout->process($doc, array()); // TODO parameters
     }
     $this->process_instructions($doc);

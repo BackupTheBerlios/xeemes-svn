@@ -47,12 +47,19 @@ class Transformation {
 
 class Layout extends Transformation {
   function Layout ($class, $name) {
-    $logic_filename = XEEMES_BASE_DIR.'/layouts/'.$class.'.xsl';
-    $layout_dir = 'layouts/'.$class.'/'.$name;
-    $layout_filename = XEEMES_BASE_DIR.'/'.$layout_dir.'.xml';
-    $this->document = DOMDocument::load($logic_filename);
-    $this->parameters['layout-filename'] = $layout_filename;
-    $this->parameters['layout-url'] = XEEMES_BASE_URL.$layout_dir.'/';
+    if ($class) {
+      $logic_filename = XEEMES_BASE_DIR.'/layouts/'.$class.'.xsl';
+      $layout_dir = 'layouts/'.$class.'/'.$name;
+      $layout_filename = XEEMES_BASE_DIR.'/'.$layout_dir.'.xml';
+      $this->document = DOMDocument::load($logic_filename);
+      $this->parameters['layout-filename'] = $layout_filename;
+      $this->parameters['layout-url'] = XEEMES_BASE_URL.$layout_dir.'/';
+    } else {
+      $layout_dir = 'layouts/'.$name;
+      $layout_filename = XEEMES_BASE_DIR.'/'.$layout_dir.'.xsl';
+      $this->document = DOMDocument::load($layout_filename);
+      $this->parameters['layout-url'] = XEEMES_BASE_URL.$layout_dir.'/';
+    }      
   }
 }
 

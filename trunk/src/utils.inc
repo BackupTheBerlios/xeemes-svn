@@ -37,6 +37,44 @@ function define_globals($script_distance) {
   define('XEEMES_BASE_DIR', $info2['dirname']);
 }
 
+function canonic_path($relative_path) {
+  // Remove any ./
+  $relative_path = str_replace('/./', '/', $relative_path);
+
+  /*
+  // Remove trailing /
+  if ($relative_path[strlen($relative_path)-1] == '/')
+    $relative_path = substr($relative_path, 0, -1);
+  */
+
+  $realpath = '';
+  $q = 0;
+  $p = strpos($relative_path, '/..', $q);
+  while ($p !== false) {
+    // Get the next part of the path
+    if ($p != $q)
+      $realpath .= substr($relative_path, $q, $p);
+
+    // Find the edge of the previous directory
+    $i = strrpos($realpath, '/');
+    if ($i === false)
+      return false;  // Not enough directories to go up any further.
+
+    // Remove the directory
+    $realpath = substr($realpath, 0, $i);
+    // Take out the "/.."
+    $relative_path = substr($relative_path, 0, $p) .
+      substr($relative_path, $p+3);
+
+    // Find the next "/.."
+    $q = $p;
+    $p = strpos($relative_path, '/..', $q);
+  }
+  // Get the rest of the relative path.
+  $realpath .= substr($relative_path, $q);
+  return $realpath;
+}
+
 function strpos_nested($text, $end_str, $start_str, $offset = 0) {
   do {
     $end_pos = strpos($text, $end_str, $offset);

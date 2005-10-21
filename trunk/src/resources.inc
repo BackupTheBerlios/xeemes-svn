@@ -42,6 +42,7 @@ function get_resource($location, $args, $relation_location = '') {
     if ($info['dirname'] == '/') $info['dirname'] = '';
     $location = $info['dirname'].'/'.$location;
   }
+  $location = canonic_path($location); // TODO: can return false
   $info = pathinfo($location);
   $ext = strtolower($info['extension']);
   if (in_array($ext, ImageResource::extensions()))

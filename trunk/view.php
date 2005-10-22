@@ -30,6 +30,8 @@ require_once('src/resources.inc');
 
 function view($location, $args) {
   $resource = get_resource($location, $args);
+  global $xeemes_current_resource;
+  $xeemes_current_resource = $resource;
   if (($resource->type() & XEEMES_RESOURCE_XML) > 0) {
     if (!$resource->exists()) {
       print('<html><body>404 - not found</body></html>'); // TODO

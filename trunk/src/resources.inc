@@ -139,6 +139,29 @@ class Resource {
     return $this->location;
   }
 
+  function isDirectoryIndex() {
+    global $directory_indices;
+    return in_array(basename($this->location), $directory_indices);
+  }
+
+  function getName() {
+    // TODO: what about title tags in html-files?
+    $name = $this->get_meta('display-name');
+    if ($name)
+      return $name;
+    else {
+      $info = pathinfo($this->location);
+      $name = $info['basename'];
+      if ($this->isDirectoryIndex()) {
+	$parent_location = $info['dirname'];
+	if ($parent_location == '/')
+	  return 'Homepage'; // TODO;
+	else
+	  return basename($parent_location);
+      } else
+	return $name;
+    }
+  }
 }
 
 // TODO: maybe move inline-code into classes
@@ -260,7 +283,6 @@ function include_resource($main_resource, $node,
   $result = array();
 
   $location = $node->attributes->getNamedItem('location')->nodeValue;
-  $name = $location;
   // TODO: args: location, thumbnail, size, frame
   $args = array();
   
@@ -268,6 +290,8 @@ function include_resource($main_resource, $node,
   $inline = $display_n && $display_n->nodeValue;
   $resource = get_resource($location, $args,
 			   $already_included_locations[0]);
+  $name = $resource->getName();
+
   if (in_array($location, $already_included_locations)) {
     return $doc->createTextNode('[Error: recursive inclusion of '.
 				$location.']');

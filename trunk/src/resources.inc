@@ -135,7 +135,7 @@ class Resource {
       print($this->stringContent());
   }
 
-  function get_location() {
+  function getLocation() {
     return $this->location;
   }
 
@@ -272,7 +272,7 @@ function include_resource($main_resource, $node,
     return $doc->createTextNode('[Error: recursive inclusion of '.
 				$location.']');
   } else {
-    $location = $resource->get_location();
+    $location = $resource->getLocation();
     array_unshift($already_included_locations, $location);
   }
   $type = $resource->type();
@@ -354,7 +354,7 @@ function make_xsl_transformation($resource, $node) {
   // load stylesheet
   $doc = $node->ownerDocument;
   $stylesheet_res = get_resource($node->getAttribute('stylesheet'), array(),
-				 $resource->get_location());
+				 $resource->getLocation());
   $stylesheet = new XSLTProcessor();
   $stylesheet->importStyleSheet($stylesheet_res->domContent());
 

@@ -35,6 +35,9 @@ define('XEEMES_RESOURCE_DATA',      16);
 define('XEEMES_RESOURCE_WIKIPEDIA', 32);
 
 $allow_php = true;
+$directory_indices = array('Index', 'index', 'Index.xhtml', 'index.xhtml',
+			   'Index.html', 'index.html', 'Index.php',
+			   'index.php');
 
 function get_resource($location, $args, $relation_location = '') {
   if (substr($location, 0, 1) != '/') {
@@ -43,6 +46,18 @@ function get_resource($location, $args, $relation_location = '') {
     $location = $info['dirname'].'/'.$location;
   }
   $location = canonic_path($location); // TODO: can return false
+
+  if ($location[strlen($location)-1] == '/') {
+    // a request for a directory
+    global $directory_indices;
+    foreach ($directory_indices as $index) {
+      $res = get_resource($location.$index, $args, $relation_location);
+      if ($res->exists())
+	return $res;
+    }
+    // no index file... TODO: create directory listing
+  }
+
   $info = pathinfo($location);
   $ext = strtolower($info['extension']);
   if (in_array($ext, ImageResource::extensions()))
@@ -362,7 +377,6 @@ function replace_special_tags($resource, $nodes,
 	} else {
 	  $err = $node->ownerDocument->createTextNode('Unknown special tag: '.
 						      $node->localName);
-	  print_r($node->parentNode);
 	  $node->parentNode->replaceChild($err, $node);
 	}
       } else {

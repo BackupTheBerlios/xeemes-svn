@@ -33,6 +33,7 @@ define('XEEMES_RESOURCE_IMAGE',      4);
 define('XEEMES_RESOURCE_HTML',       8);
 define('XEEMES_RESOURCE_DATA',      16);
 define('XEEMES_RESOURCE_WIKIPEDIA', 32);
+define('XEEMES_RESOURCE_DIRECTORY', 64);
 define('XEEMES_RESOURCE_JPEG',      128);
 define('XEEMES_RESOURCE_PNG',       256);
 define('XEEMES_RESOURCE_GIF',       512);
@@ -43,23 +44,33 @@ $directory_indices = array('Index', 'index', 'Index.xhtml', 'index.xhtml',
 			   'index.php');
 $filesystem_charset = 'iso-8859-1';
 
+function mypathinfo($path) {
+  $info = pathinfo($path);
+  if ($path[strlen($path)-1] == '/')
+    $info['pathname'] = $path;
+  else
+    $info['pathname'] = $info['dirname'].'/';
+  return $info;
+}
+
 function get_resource($location, $args, $relation_location = '') {
   if (substr($location, 0, 1) != '/') {
-    $info = pathinfo($relation_location);
+    $info = mypathinfo($relation_location);
     if ($info['dirname'] == '/') $info['dirname'] = '';
-    $location = $info['dirname'].'/'.$location;
+    $location = $info['pathname'].$location;
   }
   $location = canonic_path($location); // TODO: can return false
 
+  global $filesystem_charset;
+  $filename = iconv($filesystem_charset, 'utf-8', $location);
+
+  if (($location[strlen($location)-1] != '/') &&
+      (file_exists(XEEMES_BASE_DIR.'/data'.$filename)) &&
+      (is_dir(XEEMES_BASE_DIR.'/data'.$filename)))
+    $location .= '/';
+
   if ($location[strlen($location)-1] == '/') {
-    // a request for a directory
-    global $directory_indices;
-    foreach ($directory_indices as $index) {
-      $res = get_resource($location.$index, $args, $relation_location);
-      if ($res->exists())
-	return $res;
-    }
-    // no index file... TODO: create directory listing
+    return new DirectoryResource($location, $args);
   }
 
   $info = pathinfo($location);
@@ -95,6 +106,7 @@ class Resource {
   var $args;
 
   function Resource ($location, $args) {
+    global $filesystem_charset;
     $this->location = $location;
     $this->meta_data = null;
 
@@ -392,6 +404,67 @@ class GIFResource extends ImageResource {
 
   function outputSameType($image) {
     imagegif($image);
+  }
+}
+
+class DirectoryResource extends XMLResource {
+  // a request for a directory
+  var $index_resource;
+
+  function DirectoryResource ($location, $args) {
+    parent::XMLResource($location, $args);
+    global $directory_indices;
+    $this->index_resource = null;
+    foreach ($directory_indices as $index) {
+      $res = get_resource($location.$index, $args, $relation_location);
+      if ($res->exists()) {
+	$this->index_resource = $res;
+	break;
+      }
+    }
+    // no index file... TODO: create directory listing
+  }
+
+  function type() {
+    return XEEMES_RESOURCE_DIRECTORY | parent::type();
+  }
+
+  function extensions() {
+    return array();
+  }
+
+  function domContent() {
+    if ($this->index_resource)
+      return $this->index_resource->domContent();
+    else
+      return DOMDocument::loadXML('<?xml version="1.0" encoding="iso-8859-1"?>
+<html><body>Automatic directory indexing not implemented</body></html>'); // TODO
+  }
+
+  function getSubresources() {
+    global $directory_indices, $filesystem_charset;
+    // TODO: override by meta-data
+    $path = $this->getLocation();
+    $locations = array();
+    $dir = opendir(XEEMES_BASE_DIR.'/data'.$path);
+    while (($file = readdir($dir)) !== false) {
+      $filename = $path.$file;
+      $pathinfo = pathinfo($filename);
+      if (($file[0] != '.') &&
+	  ($pathinfo['extension'] != 'meta') &&
+	  (!in_array($pathinfo['basename'], $directory_indices)) &&
+	  ($file[strlen($file)-1] != '~')) {
+	// TODO: correct encoding of filesystem???
+	if (is_dir(XEEMES_BASE_DIR.'/data'.$filename))
+	  $filename .= '/';
+	$locations []= iconv($filesystem_charset, 'utf-8', $filename);
+      }
+    }
+    closedir($dir);
+    $result = array();
+    foreach ($locations as $location)
+      $result []= get_resource($location, array());
+    return $result;
   }
 }
 

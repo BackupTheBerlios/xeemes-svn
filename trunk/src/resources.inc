@@ -178,27 +178,17 @@ class Resource {
     return $this->location;
   }
 
-  function isDirectoryIndex() {
-    global $directory_indices;
-    return in_array(basename($this->location), $directory_indices);
-  }
-
   function getName() {
     // TODO: what about title tags in html-files?
     $name = $this->get_meta('display-name');
     if ($name)
       return $name;
     else {
-      $info = pathinfo($this->location);
-      $name = $info['basename'];
-      if ($this->isDirectoryIndex()) {
-	$parent_location = $info['dirname'];
-	if ($parent_location == '/')
-	  return 'Homepage'; // TODO;
-	else
-	  return basename($parent_location);
-      } else
+      $name = basename($this->location);
+      if ($name != '')
 	return $name;
+      else
+	return 'Homepage'; // TODO config
     }
   }
 

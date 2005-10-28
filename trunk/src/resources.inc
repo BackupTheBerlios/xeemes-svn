@@ -33,6 +33,9 @@ define('XEEMES_RESOURCE_IMAGE',      4);
 define('XEEMES_RESOURCE_HTML',       8);
 define('XEEMES_RESOURCE_DATA',      16);
 define('XEEMES_RESOURCE_WIKIPEDIA', 32);
+define('XEEMES_RESOURCE_JPEG',      128);
+define('XEEMES_RESOURCE_PNG',       256);
+define('XEEMES_RESOURCE_GIF',       512);
 
 $allow_php = true;
 $directory_indices = array('Index', 'index', 'Index.xhtml', 'index.xhtml',
@@ -60,8 +63,12 @@ function get_resource($location, $args, $relation_location = '') {
 
   $info = pathinfo($location);
   $ext = strtolower($info['extension']);
-  if (in_array($ext, ImageResource::extensions()))
-    return new ImageResource($location, $args);
+  if (in_array($ext, JPEGResource::extensions()))
+    return new JPEGResource($location, $args);
+  else if (in_array($ext, PNGResource::extensions()))
+    return new PNGResource($location, $args);
+  else if (in_array($ext, GIFResource::extensions()))
+    return new GIFResource($location, $args);
   else if (in_array($ext, DataResource::extensions()))
     return new DataResource($location, $args);
   else if (in_array($ext, WikipediaResource::extensions()))
@@ -283,12 +290,99 @@ class DataResource extends Resource {
 class ImageResource extends Resource {
   /* display inline with <img> tag */
   /* conversions with GD library */
-  function extensions() {
-    return array('jpg', 'jpeg', 'png', 'gif');
-  }
 
   function type() {
     return XEEMES_RESOURCE_IMAGE | parent::type();
+  }
+
+  function outputContent() {
+    header('Content-Type: '.$this->contentType()); // this is abstract
+    // TODO: size args
+    if ($this->args['thumbnail'] == '1') {
+      $image = $this->imageContent(); // abstract
+      $ow = imagesx($image); $oh = imagesy($image);
+      $width = 100;
+      $height = 100;
+
+      if ($ow > $oh)
+	$height = $height * $oh / $ow;
+      else
+	$width = $width * $ow / $oh;
+      $thumb = imagecreatetruecolor($width, $height);
+      imagefilledrectangle($thumb, 0, 0, $width, $height, 16777215);
+      imagecopyresampled($thumb, $image, 0, 0, 0, 0, $width, $height, $ow, $oh);
+
+      $this->outputSameType($thumb); // abstract
+      imagedestroy($thumb);
+      imagedestroy($image);
+    } else
+      parent::outputContent();
+  }
+}
+
+class JPEGResource extends ImageResource {
+  function extensions() {
+    return array('jpeg', 'jpg');
+  }
+
+  function type() {
+    return XEEMES_RESOURCE_JPEG | parent::type();
+  }
+
+  function imageContent() {
+    return imagecreatefromjpeg($this->filename);
+  }
+
+  function contentType() {
+    return "image/jpeg";
+  }
+
+  function outputSameType($image) {
+    imagejpeg($image);
+  }
+}
+
+class PNGResource extends ImageResource {
+  function extensions() {
+    return array('png');
+  }
+
+  function type() {
+    return XEEMES_RESOURCE_PNG | parent::type();
+  }
+
+  function imageContent() {
+    return imagecreatefrompng($this->filename);
+  }
+
+  function contentType() {
+    return "image/png";
+  }
+
+  function outputSameType($image) {
+    imagepng($image);
+  }
+}
+
+class GIFResource extends ImageResource {
+  function extensions() {
+    return array('gif');
+  }
+
+  function type() {
+    return XEEMES_RESOURCE_GIF | parent::type();
+  }
+
+  function imageContent() {
+    return imagecreatefromgif($this->filename);
+  }
+
+  function contentType() {
+    return "image/gif";
+  }
+
+  function outputSameType($image) {
+    imagegif($image);
   }
 }
 

@@ -41,6 +41,7 @@ $allow_php = true;
 $directory_indices = array('Index', 'index', 'Index.xhtml', 'index.xhtml',
 			   'Index.html', 'index.html', 'Index.php',
 			   'index.php');
+$filesystem_charset = 'iso-8859-1';
 
 function get_resource($location, $args, $relation_location = '') {
   if (substr($location, 0, 1) != '/') {
@@ -85,18 +86,22 @@ class Resource {
   /* location */
   /* meta data */
   /* content */
-  var $location;
+  var $location; // in utf-8 charset
   var $meta_data;
 
   var $filename;
   var $meta_filename;
 
+  var $args;
+
   function Resource ($location, $args) {
     $this->location = $location;
     $this->meta_data = null;
 
-    $this->filename = XEEMES_BASE_DIR.'/data'.$location; // TODO illegal chars
+    $this->filename = XEEMES_BASE_DIR.'/data'.
+      iconv('utf-8', $filesystem_charset, $location); // TODO illegal chars
     $this->meta_filename = $this->filename.'.meta';
+    $this->args = $args;
   }
 
   function type() {
@@ -183,6 +188,10 @@ class Resource {
       } else
 	return $name;
     }
+  }
+
+  function getParentResource() {
+    return get_resource(dirname($this->location), array());
   }
 }
 

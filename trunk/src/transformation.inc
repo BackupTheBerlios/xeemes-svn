@@ -35,6 +35,7 @@ class Transformation {
 
   function process($doc, $parameters) {
     $proc = new XSLTProcessor();
+    $proc->registerPHPFunctions();
     $proc->importStyleSheet($this->document);
     foreach ($this->parameters as $name => $value)
       $proc->setParameter('', $name, $value);
@@ -63,33 +64,56 @@ class Layout extends Transformation {
   }
 }
 
-/*
-function make_layout_logic($filename) {
-  // TODO quote filename
-  $xsl = '<?xml version="1.0" encoding="utf-8"?>
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
-<xsl:variable name="page" select="/"/>
-<xsl:variable name="layout" select="document(\''.$filename.'\')"/>
-<xsl:template match="/">
-    <xsl:apply-templates select="$layout/html"/>
-</xsl:template>
-<xsl:template match="insert-head">
-    <!-- Get the head values here... -->
-    <xsl:apply-templates select="$page/html/head/*"/>
-</xsl:template>
-<xsl:template match="insert-body">
-    <!-- Get the body here -->
-    <xsl:apply-templates select="$page/html/body/*"/>
-</xsl:template>
-<!-- Identity transformation -->
-<xsl:template match="@*|*">
-    <xsl:copy>
-        <xsl:apply-templates select="@*|node()"/>
-    </xsl:copy>
-</xsl:template>
-</xsl:stylesheet>';
-  return DOMDocument::loadXML($xsl);
+/* utility functions, intended to be called from inside an xsl */
+
+function resource_xml_representation($resource, $doc, $include_subs) {
+  $node = $doc->createElement('resource');
+  $node->setAttribute('location', $resource->getLocation());
+  $node->setAttribute('name', $resource->getName());
+  $is_directory = ($resource->type() & XEEMES_RESOURCE_DIRECTORY) > 0;
+  $node->setAttribute('is-directory', $is_directory ? '1' : '0');
+  if (($include_subs > 0) &&
+      (($resource->type() & XEEMES_RESOURCE_DIRECTORY) > 0)) {
+    $subs = $node->appendChild($doc->createElement('subresources'));
+    foreach ($resource->getSubresources() as $sub)
+      $subs->appendChild(resource_xml_representation($sub, $doc,
+						     $include_subs-1));
+  }
+  return $node;
 }
-*/
+
+function xeemes_current_resource($include_subs = 0) {
+  global $xeemes_current_resource;
+  $doc = new DOMDocument('1.0', 'utf-8');
+  $doc->appendChild(resource_xml_representation($xeemes_current_resource,
+						$doc, $include_subs));
+  return $doc;
+}
+
+function xeemes_parent_resource($include_subs = 0) {
+  global $xeemes_current_resource;
+  $doc = new DOMDocument('1.0', 'utf-8');
+  $parent = $xeemes_current_resource->getParentResource();
+  $doc->appendChild(resource_xml_representation($parent, $doc,
+						$include_subs));
+  return $doc;
+}
+
+function xeemes_current_resource_path($include_subs = 0) {
+  global $xeemes_current_resource;
+  $doc = new DOMDocument('1.0', 'utf-8');
+  $root = $doc->createElement('resource-path');
+  $root->setAttribute('order', 'ascending');
+  $resources = array($xeemes_current_resource);
+  $next = $xeemes_current_resource;
+  while ($next->getLocation() != '/') {
+    $next = $next->getParentResource();
+    array_unshift($resources, $next);
+  }
+  foreach ($resources as $res)
+    $root->appendChild(resource_xml_representation($res, $doc, $include_subs));
+  $doc->appendChild($root);
+  return $doc;
+}
 
 ?>

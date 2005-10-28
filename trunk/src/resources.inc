@@ -473,7 +473,7 @@ function include_resource($main_resource, $node,
 			   $already_included_locations[0]);
   $name = $resource->getName();
 
-  if (in_array($location, $already_included_locations)) {
+  if ($inline && (in_array($location, $already_included_locations))) {
     return $doc->createTextNode('[Error: recursive inclusion of '.
 				$location.']');
   } else {
@@ -499,8 +499,20 @@ function include_resource($main_resource, $node,
       }
     } else if (($type & XEEMES_RESOURCE_IMAGE) > 0) {
       $img = $doc->createElement('img');
-      // TODO args
-      $img->setAttribute('src', XEEMES_BASE_URL.'view.php'.$location);
+      $img->setAttribute('border', '0'); //?? TODO take over attrs?
+      if ($node->hasAttribute('special')) {
+	$args = array();
+	$special = $node->getAttribute('special');
+	if ($special == 'thumbnail')
+	  $args['thumbnail'] = '1';
+      }
+      // TODO size, frame, etc.
+      $srcurl = XEEMES_BASE_URL.'view.php'.$location;
+      if (count($args) > 0) $srcurl .= '?';
+      foreach ($args as $name => $value)
+	// TODO: really htmlspecialchars??
+	$srcurl .= htmlspecialchars($name).'='.htmlspecialchars($value);
+      $img->setAttribute('src', $srcurl);
       $result = $img;
     } else if (($type & XEEMES_RESOURCE_DATA) > 0) {
       $obj = $doc->createElement('object');
@@ -510,12 +522,17 @@ function include_resource($main_resource, $node,
     }
   } else {
     $link = $doc->createElement('a');
-    if ($node->hasChildNodes()) {
+    if ($node->hasChildNodes()) { // textContent != ''
       foreach (nodelist2array($node->childNodes) as $child)
-	$link->appendChild($link, $doc->importNode($child, true));
+	$link->appendChild($doc->importNode($child, true)); // TODO
     } else
       $link->appendChild($doc->createTextNode($name));
     $link->setAttribute('href', $resource->view_url()); // TODO args
+    // TODO: more sophisticated attribute setting, neg./pos. list etc.
+    if ($node->hasAttribute('class'))
+      $link->setAttribute('class', $node->getAttribute('class'));
+    else
+      $link->setAttribute('class', 'internal');
     $result = $link;
   }
 
@@ -533,18 +550,17 @@ function replace_special_tags($resource, $nodes,
   foreach ($nodes as $node) {
     if ($node->nodeType == XML_ELEMENT_NODE) {
       if ($node->namespaceURI == XEEMES_NS_URI) {
-	if ($node->localName == 'xsl-transformation') {
+	if ($node->localName == 'xsl-transformation')
 	  $new = make_xsl_transformation($resource, $node);
-	  replace_node($node, $new);
-	} else if ($node->localName == 'resource') {
+	else if ($node->localName == 'gallery')
+	  $new = make_gallery($resource, $node);
+	else if ($node->localName == 'resource')
 	  $new = include_resource($resource, $node,
 				  $already_included_locations);
-	  replace_node($node, $new);
-	} else {
-	  $err = $node->ownerDocument->createTextNode('Unknown special tag: '.
+	else
+	  $new = $node->ownerDocument->createTextNode('Unknown special tag: '.
 						      $node->localName);
-	  $node->parentNode->replaceChild($err, $node);
-	}
+	replace_node($node, $new);
       } else {
 	foreach (nodelist2array($node->childNodes) as $child)
 	  replace_special_tags($resource, $child, $already_included_locations);
@@ -583,6 +599,113 @@ function make_xsl_transformation($resource, $node) {
   
   //return $doc->importNode($result_doc->documentElement, true);
   // TODO: recursive replace special tags?
+}
+
+function make_gallery($resource, $node) {
+  $doc = $node->ownerDocument;
+  $result = array();
+
+  /* collect images */
+  // TODO: single resources
+  $slocation = $node->getAttribute('location');
+  $res = get_resource($slocation, array(), $resource->getLocation()); // TODO: fix dirname and '/' problem
+  if (!$res->exists())
+    return $doc->createTextNode('Location not found: '.$res->getLocation());
+  $location = $res->getLocation();
+  
+  $locations = find_gallery_locations($location, true);
+
+  if (isset($resource->args['image'])) {
+    /* view single image */
+    $index = $resource->args['image'];
+    $res = $doc->createElementNS(XEEMES_NS_URI, 'resource');
+    $res->setAttribute('location', $locations[$index]);
+    $res->setAttribute('display', 'inline');
+
+    $things = include_resource($resource, $res, array());
+    $result = $things;
+
+    $nexti = ($index + 1) % count($locations);
+    $previ = (count($locations) + $index - 1) % count($locations);
+    //... TODO navigation
+  } else {
+    /* overview page */
+    $columns = $node->hasAttribute('columns') ?
+      $node->getAttribute('columns') : 6;
+    $per_page = 30;
+    
+    if (isset($resource->args['page']))
+      $page = $resource->args['page'];
+    else
+      $page = 0;
+    
+    $num_pages = count($locations)/$per_page;
+    for ($i = 0; $i < $num_pages; $i++) {
+      $lnk = $doc->createElementNS(XEEMES_NS_URI, 'resource');
+      $lnk->setAttribute('location', $resource->getLocation().'?page='.$i);
+      $lnk->setAttribute('class', 'gallery-link');
+      $lnk->appendChild($doc->createTextNode($i+1));
+      $lnk->appendChild($doc->createTextNode(' '));
+      $result []= include_resource($ressource, $lnk, array());
+    }
+    
+    $table = $doc->createElement('table');
+    $i = $page * $per_page;
+    for ($j = 0; $j < (count($locations) / $columns); $j++) {
+      $row = $table->appendChild($doc->createElement('tr'));
+      for ($k = 0; $k < $columns; $k++) {
+	$cell = $row->appendChild($doc->createElement('td'));
+	
+	$lnk = $doc->createElementNS(XEEMES_NS_URI, 'resource');
+	$lnk->setAttribute('location', $resource->getLocation().'?image='.$i);
+	
+	$res = $doc->createElementNS(XEEMES_NS_URI, 'resource');
+	$res->setAttribute('location', $locations[$i]);
+	$res->setAttribute('display', 'inline');
+	$res->setAttribute('special', 'thumbnail');
+	
+	$things = include_resource($resource, $res, array());
+	if (!is_array($things)) $things = array($things);
+	foreach ($things as $thing)
+	  $lnk->appendChild($thing);
+	
+	$things = include_resource($resource, $lnk, array());
+	if (!is_array($things)) $things = array($things);
+	foreach ($things as $thing)
+	  $cell->appendChild($thing);
+	
+	$i++;
+	if (($i >= count($locations)) || ($i >= (($page + 1)*$per_page)))
+	  break 2;
+      }
+    }
+    $result []= $table;
+  }
+  return $result;
+}
+
+function find_gallery_locations($location, $include_dirs) {
+  global $filesystem_charset;
+  $path = iconv('utf-8', $filesystem_charset, $location);
+  $locations = array();
+  $dir = opendir(XEEMES_BASE_DIR.'/data'.$path);
+  while (($file = readdir($dir)) !== false) {
+    $filename = $path.$file;
+    $pathinfo = pathinfo($filename);
+    if (($file[0] != '.') &&
+	($pathinfo['extension'] != 'meta') &&
+	($file[strlen($file)-1] != '~')) {
+      // TODO: correct encoding of filesystem???
+      if (is_dir(XEEMES_BASE_DIR.'/data'.$filename)) {
+	$filename .= '/';
+	if (!$include_dirs)
+	  continue;
+      }
+      $locations []= iconv($filesystem_charset, 'utf-8', $filename);
+    }
+  }
+  closedir($dir);
+  return $locations;
 }
 
 ?>

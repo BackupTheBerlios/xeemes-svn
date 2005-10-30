@@ -108,8 +108,9 @@ abstract class XeemesTag {
       } else {
 	$child = $node->firstChild;
 	while ($child) {
+	  $next = $child->nextSibling;
 	  self::replaceTags($resource, $child);
-	  $child = $child->nextSibling;
+	  $child = $next;
 	}
 	//foreach (nodelist2array($node->childNodes) as $child)
       }

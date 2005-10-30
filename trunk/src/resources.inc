@@ -55,8 +55,18 @@ function mypathinfo($path) {
   if ($info['basename'][0] == '.') {
     // dot-files
     $einfo = pathinfo(substr($info['basename'], 1));
-    $info['extension'] = $einfo['extension'];
+    if (isset($einfo['extension']))
+      $info['extension'] = $einfo['extension'];
+    else
+      unset($info['extension']);
   }
+
+  if (isset($info['extension']))
+    $info['name'] = substr($info['basename'], 0,
+			   strlen($info['basename'])
+			   - strlen($info['extension']) - 1);
+  else
+    $info['name'] = $info['basename'];
 
   return $info;
 }
@@ -193,7 +203,8 @@ class Resource {
     if ($name)
       return $name;
     else {
-      $name = basename($this->location);
+      $info = mypathinfo($this->location);
+      $name = $info['name'];
       if ($name != '')
 	return $name;
       else

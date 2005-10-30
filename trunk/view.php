@@ -28,6 +28,7 @@ define_globals(0);
 
 require_once('src/resources.inc');
 require_once('src/authenticate.inc');
+require_once('src/transformation.inc');
 
 function view($location, $args) {
   $resource = get_resource($location, $args);
@@ -42,7 +43,20 @@ function view($location, $args) {
       print('<html><body>404 - not found</body></html>'); // TODO
     } else {
       header('Content-Type: text/html; charset=utf-8');
-      print($resource->xmlContent());
+      $doc = $resource->domContent();
+
+      $layout_name = $resource->get_meta('layout-name');
+      if (!$layout_name) $layout_name = 'default';
+      $layout_class = $resource->get_meta('layout-class');
+      if ($layout_name) {
+	// class can be false
+	$layout = new Layout($layout_class, $layout_name);
+	$doc = $layout->process($doc, array()); // TODO parameters
+      }
+      //$this->process_instructions($doc); // TODO
+      XeemesTag::replaceTags($resource, $doc->documentElement);
+
+      print($doc->saveXML());
     }
   } else {
     if (!$resource->exists())

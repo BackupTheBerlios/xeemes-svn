@@ -23,9 +23,10 @@
  * Boston, MA 02111-1307, USA.
  */
 
-define('XEEMES_NS_URI', 'http://xeemes.org/schema');
-
 require_once('utils.inc');
+require_once('tags.inc');
+
+define('WIKI_TEMP_NS', 'http://xeemes.org/wiki-temp-schema');
 
 class WikipediaParser {
   var $document;
@@ -76,8 +77,7 @@ class WikipediaParser {
 	$s2 = $this->document->createTextNode(substr($first->textContent,
 						     $pos+$dim));
 	$line []= $s1;
-	$xl = $this->document->createElementNS(XEEMES_NS_URI,
-					       'xeemes:line');
+	$xl = $this->document->createElementNS(WIKI_TEMP_NS, 'tmp:line');
 	foreach ($line as $item)
 	  $xl->appendChild($item);
 	$line = array();
@@ -92,8 +92,7 @@ class WikipediaParser {
       }
     }
     if (count($line) > 0) {
-      $xl = $this->document->createElementNS(XEEMES_NS_URI,
-					     'xeemes:line');
+      $xl = $this->document->createElementNS(WIKI_TEMP_NS, 'tmp:line');
       foreach ($line as $item)
 	$xl->appendChild($item);
       $this->document->documentElement->firstChild->appendChild($xl);
@@ -187,8 +186,7 @@ class WikipediaParser {
       else if (substr($text, $start, 2) == '[[') {
 	$pos = strpos_nested($text, ']]', '[[', $start+2);
 	if ($pos === false) $this->parse_error();
-	$res = $this->document->createElementNS(XEEMES_NS_URI,
-						'xeemes:resource1');
+	$res = $this->document->createElementNS(WIKI_TEMP_NS, 'tmp:resource1');
 	foreach ($this->replace_inliners($text, $start+2, $pos) as $node)
 	  $res->appendChild($node);
 	$start = $pos+2;
@@ -196,8 +194,7 @@ class WikipediaParser {
       } else if (substr($text, $start, 1) == '[') {
 	$pos = strpos_nested($text, ']', '[', $start+1);
 	if ($pos === false) $this->parse_error();
-	$link = $this->document->createElementNS(XEEMES_NS_URI,
-						 'xeemes:link1');
+	$link = $this->document->createElementNS(WIKI_TEMP_NS, 'tmp:link1');
 	foreach ($this->replace_inliners($text, $start+1, $pos) as $node)
 	  $link->appendChild($node);
 	$start = $pos+1;
@@ -245,8 +242,7 @@ class WikipediaParser {
     if ($node == null) $node = $this->document->documentElement;
 
     if ($node->nodeType == XML_ELEMENT_NODE) {
-      //if ($node->namespaceURI == XEEMES_NS_URI) { //?? TODO
-      if ($node->prefix == 'xeemes') {
+      if ($node->namespaceURI == WIKI_TEMP_NS) {
 	if ($node->localName == 'resource1') {
 	  foreach (nodelist2array($node->childNodes) as $child)
 	    $this->post_processing($child);
@@ -302,7 +298,7 @@ class WikipediaParser {
     }
   }
 
-  /** input: a xeemes:resource1 node, containing text nodes and other tags
+  /** input: a resource1 node, containing text nodes and other tags
    *  is replaced by a xeemes:resource with appropriate attributes and content
    */
   function process_resource1($node) {
@@ -316,10 +312,12 @@ class WikipediaParser {
 	  if ($first) { // the first text part is the location
 	    $first = false;
 	    if (($text != '') && ($text[0] == ':')) {
-	      $resource->setAttribute('display', 'inline');
+	      $resource->setAttributeNS(XEEMES_NS_URI, 'xeemes:display',
+					'inline');
 	      $text = substr($text, 1);
 	    }
-	    $resource->setAttribute('location', $text);
+	    $resource->setAttributeNS(XEEMES_NS_URI, 'xeemes:location',
+				      $text);
 	  } else if (($text == 'left') ||
 		     ($text == 'right') ||
 		     ($text == 'center')) {
@@ -329,11 +327,14 @@ class WikipediaParser {
 	    // ignore ??
 	  } else if (($text == 'thumb') ||
 		     ($text == 'thumbnail')) {
-	    $resource->setAttribute('special', 'thumbnail');
+	    $resource->setAttributeNS(XEEMES_NS_URI, 'xeemes:special',
+				      'thumbnail');
 	  } else if (preg_match('/([0-9]+px)/', $text, $matches)) {
-	    $resource->setAttribute('size', $matches[1]);
+	    $resource->setAttributeNS(XEEMES_NS_URI, 'xeemes:size',
+				      $matches[1]);
 	  } else if ($text == 'frame') {
-	    $resource->setAttribute('special', 'frame');
+	    $resource->setAttributeNS(XEEMES_NS_URI, 'xeemes:special',
+				      'frame');
 	  } else {
 	    // the alternate text
 	    $resource->appendChild($this->document->createTextNode($text));

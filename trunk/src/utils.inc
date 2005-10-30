@@ -110,27 +110,45 @@ function replace_node($oldnode, $newnodes) {
   $oldnode->parentNode->removeChild($oldnode);
 }
 
-function eval_php($program) {
+function replace_process_instructions($doc, $defs, $node = false) {
+  if ($node === false) $node = $doc->documentElement;
+  if ($node->nodeType == XML_PI_NODE) {
+    if (array_key_exists($node->target, $defs)) {
+      $fun = $defs[$node->target];
+      $node->parentNode->replaceChild($fun($doc, $node->data), $node);
+    } else {
+      // error, ignore, keep?
+    }
+  } else if ($node->nodeType == XML_ELEMENT_NODE) {
+    foreach (nodelist2array($node->childNodes) as $child)
+      replace_process_instructions($doc, $defs, $child);
+  }
+}
+
+function replace_php_instructions($doc) {
+  replace_process_instructions($doc, array('php' => 'eval_php'));
+}
+
+function eval_php($doc, $program) {
   ob_start();
   eval($program);
-  $result = ob_get_contents();
+  $text = ob_get_contents();
   ob_end_clean();
-  return $result;
+
+  return import_html_text($doc, $text);
 }
 
 function import_html_text($doc, $text) {
-   $xml_text = '<?xml version="1.0" encoding="UTF-8"?>'."\n".
-    '<doc>'.$text.'</doc>';
-  $xml = DOMDocument::loadXML($xml_text);
+  $xml_text = '<?xml version="1.0" encoding="UTF-8"?>'."\n".
+    '<span>'.$text.'</span>';
+  $xml = @DOMDocument::loadXML($xml_text);
   if (!$xml) {
-    return array($doc->createComment('Failed to load text as XML: '), // TODO: Error message?
-		 $doc->createTextNode($text));
-  } else {
-    $result = array();
-    foreach (nodelist2array($xml->documentElement->childNodes) as $ch)
-      $result []= $doc->importNode($ch);
-    return $result;
-  }
+    $span = $doc->createElement('span');
+    $span->appendChild($doc->createComment('Failed to load text as XML: '));
+    $span->appendChild($doc->createTextNode($text));
+    return $span;
+  } else
+    return $doc->importNode($xml->documentElement, true);
 }
 
 ?>

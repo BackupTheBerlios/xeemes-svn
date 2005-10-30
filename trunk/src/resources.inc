@@ -237,31 +237,14 @@ class XMLResource extends Resource {
   function domContent() {
     $doc = DOMDocument::load($this->filename);
 
-    $this->process_instructions($doc);
+    global $allow_php;
+    if ($allow_php)
+      replace_php_instructions($doc);
+
     XeemesTag::replaceTags($this, $doc->documentElement);
     // TODO transformations
 
     return $doc;
-  }
-
-  function xmlContent() {
-    $doc = $this->domContent();
-    return $doc->saveXML();
-  }
-
-  function process_instructions($doc, $node = false) {
-    global $allow_php;
-    if ($node === false) $node = $doc->documentElement;
-    if ($node->nodeType == XML_PI_NODE) {
-      if (($node->target == 'php') && $allow_php) {
-	$text = eval_php($node->data);
-	$nodes = import_html_text($doc, $text);
-	replace_node($node, $nodes);
-      }
-    } else if ($node->nodeType == XML_ELEMENT_NODE) {
-      foreach (nodelist2array($node->childNodes) as $child)
-	$this->process_instructions($doc, $child);
-    }
   }
 }
 

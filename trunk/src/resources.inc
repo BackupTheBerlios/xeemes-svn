@@ -50,6 +50,13 @@ function mypathinfo($path) {
     $info['pathname'] = $path;
   else
     $info['pathname'] = $info['dirname'].'/';
+
+  if ($info['basename'][0] == '.') {
+    // dot-files
+    $einfo = pathinfo(substr($info['basename'], 1));
+    $info['extension'] = $einfo['extension'];
+  }
+
   return $info;
 }
 
@@ -73,8 +80,9 @@ function get_resource($location, $args, $relation_location = '') {
     return new DirectoryResource($location, $args);
   }
 
-  $info = pathinfo($location);
+  $info = mypathinfo($location);
   $ext = strtolower($info['extension']);
+
   if (in_array($ext, JPEGResource::extensions()))
     return new JPEGResource($location, $args);
   else if (in_array($ext, PNGResource::extensions()))

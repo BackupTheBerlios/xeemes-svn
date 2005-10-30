@@ -236,7 +236,13 @@ class XeemesXSLTransformationTag extends XeemesTag {
     $result_doc = $stylesheet->transformToDoc($doc2);
     
     /* import to main doc */
-    return $doc->importNode($result_doc->documentElement, true);
+    if ($result_doc->childNodes->length > 1) {
+      $span = $doc->createElement('span');
+      foreach (nodelist2array($result_doc->childNodes) as $child)
+	$span->appendChild($doc->importNode($child, true));
+      return $span;
+    } else
+      return $doc->importNode($result_doc->firstChild, true);
   }
 }
 

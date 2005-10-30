@@ -25,8 +25,8 @@
 
 function verify_view_authorization($resource) {
   $edir = dirname($resource->getLocation());
-  if ($edir == '/') $edir = '';
   while (!file_exists(XEEMES_BASE_DIR.'/data'.$edir.'/.htaccess')) {
+    if ($edir == '/') $edir = '';
     if ($edir == '')
       return; // no htaccess file found
     else

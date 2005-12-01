@@ -29,45 +29,39 @@ define_globals(0);
 require_once('src/resources.inc');
 require_once('src/authenticate.inc');
 require_once('src/transformation.inc');
+require_once('src/cache.inc');
 
 function view($location, $args) {
   $resource = get_resource($location, $args);
 
-  verify_view_authorization($resource);
-
   global $xeemes_current_resource;
   $xeemes_current_resource = $resource;
-  if (($resource->type() & XEEMES_RESOURCE_XML) > 0) {
-    if (!$resource->exists()) {
-      header('HTTP/1.1 404 Not found');
-      print('<html><body>404 - not found</body></html>'); // TODO
+
+  if ($resource->exists()) {
+    $auth_info = verify_view_authorization($resource);
+
+    $cache = new XeemesResourceCache('cache/');
+    header('Content-Type: '.$resource->getContentType());
+
+    // Problem: authenticate doesn't work then, because the browser
+    // thinks it's a different directory.
+    if ((!$auth_info) && $resource->isUnmodified()) {
+      header('Location: '.XEEMES_BASE_URL.'data'.$location);
     } else {
-      header('Content-Type: text/html; charset=utf-8');
-      $doc = $resource->domContent();
-
-      $layout_name = $resource->get_meta('layout-name');
-      if (!$layout_name) $layout_name = 'default';
-      $layout_class = $resource->get_meta('layout-class');
-      if ($layout_name) {
-	// class can be false
-	$layout = new Layout($layout_class, $layout_name);
-	$doc = $layout->process($doc, array()); // TODO parameters
+      if (!$cache->output(array($location, $args))) {
+	$output = $resource->stringContent();
+	$inv = $resource->getCacheInvalidator();
+	$cache->insert(array($location, $args), $output, $inv);
+	print($output);
       }
-      //$this->process_instructions($doc); // TODO
-      XeemesTag::replaceTags($resource, $doc->documentElement);
-
-      print($doc->saveXML());
     }
   } else {
-    if (!$resource->exists())
-      header('HTTP/1.1 404 Not found');
-    else {
-      // header Content-type ??
-      $resource->outputContent();
-    }
+    header('HTTP/1.1 404 Not found');
+    print($resource->getNotFoundData());
   }
 }
 
-view($_SERVER['PATH_INFO'], $_GET);
+view(isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : $_SERVER['ORIG_PATH_INFO'],
+     $_GET);
 
 ?>

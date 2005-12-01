@@ -24,44 +24,134 @@
  */
 
 function verify_view_authorization($resource) {
-  $edir = dirname($resource->getLocation());
+  // test weather php runs as a module
+  /*  if (function_exists('apache_request_headers'))
+    return verify_view_authorization_via_http($resource);
+  else*/
+    return verify_view_authorization_via_cookie($resource);
+}
+
+function verify_view_authorization_get_htaccess($resource) {
+  $loc = $resource->getLocation();
+  if ($loc[strlen($loc)-1] == '/')
+    $edir = $loc;
+  else
+    $edir = dirname($loc);
   while (!file_exists(XEEMES_BASE_DIR.'/data'.$edir.'/.htaccess')) {
     if ($edir == '/') $edir = '';
     if ($edir == '')
-      return; // no htaccess file found
+      return false; // no htaccess file found
     else
       $edir = dirname($edir);
   }
   $htaccess = new htaccess(XEEMES_BASE_DIR.'/data'.$edir.'/.htaccess');
   $htaccess->load();
 
+  return $htaccess;
+}
+
+function verify_view_authorization_check($htaccess, $user, $pw) {
+  $htpasswd = $htaccess->getAuthUserFile();
+  $htpasswd->load();
+  $htgroups = $htaccess->getAuthGroupFile();
+
+  return (($htpasswd->validUser($user, $pw)) &&
+	  ( ($require[0] == HTACCESS_REQUIRE_VALID_USER) ||
+	    (($require[0] == HTACCESS_REQUIRE_USER) &&
+	     in_array($user, $require[1])) ||
+	    (($require[0] == HTACCESS_REQUIRE_GROUP) &&
+	     ($htgroups->load() || true) &&
+	     in_array($user, $htgroups->getGroup($require[1]))) ));
+}
+
+function get_and_save_random_password() {
+  $filename = XEEMES_BASE_DIR.'/src/.password';
+  // TODO: not concurrency-safe
+  $ex = file_exists($filename);
+  $fh = fopen($filename, "w+");
+  if ($ex)
+    $res = fgets($fh);
+  else {
+    $res = '';
+    for ($i = 0; $i < 8; $i++)
+      $res .= chr(rand(48, 122));
+    fputs($fh, $res);
+  }
+  fclose($fh);
+  return $res;
+}
+
+function verify_view_authorization_via_cookie($resource) {
+  $htaccess = verify_view_authorization_get_htaccess($resource);
+  if (!$htaccess) return false;
+
   // see if authorization is required
   $require = $htaccess->getRequire();
   if ($require == null)
-    return;
+    return false;
 
-  // check passed headers
-  if (isset($_SERVER['PHP_AUTH_USER'])) {
+  $realm = $htaccess->getAuthName();
+
+  // check cookie, or posted credentials
+  if (isset($_COOKIE['xeemes-auth-'.$realm])) {
     $htpasswd = $htaccess->getAuthUserFile();
     $htpasswd->load();
     $htgroups = $htaccess->getAuthGroupFile();
 
+    $crypt_pw = get_and_save_random_password();
+    $auth_info = unserialize(crypt($_COOKIE['xeemes-auth'], $crypt_pw));
+    $user = $auth_info[0];
+    $pw = $auth_info[1];
+    
+    if (verify_view_authorization_check($htaccess, $user, $pw))
+      return true;
+  }
+  if (isset($_POST['xeemes-user'])) {
+    $user = $_POST['xeemes-user'];
+    $pw = $_POST['xeemes-pw'];
+
+    if (verify_view_authorization_check($htaccess, $user, $pw)) {
+      // save in a cookie
+      $crypt_pw = get_and_save_random_password();
+      $auth_info = array($user, $pw);
+      setcookie('xeemes-auth-'.$realm,
+		crypt(serialize($auth_info), $crypt_pw),
+		time()+3600, $resource->getLocation());
+      return true;
+    }
+  }
+
+  // send page with login form
+  header('Content-type: text/html');
+  // TODO: put through layout of default or this/parent resource
+  print('<html><body><form method="POST"><table>'.
+	'<tr><td>Username:</td><td><input type="text" size="30" name="xeemes-user"/></td></tr>'.
+	'<tr><td>Password:</td><td><input type="password" size="30" name="xeemes-pw"/></td></tr>'.
+	'</table><input type="submit"/></form></body></html>');
+  exit();
+}
+
+function verify_view_authorization_via_http($resource) {
+  $htaccess = verify_view_authorization_get_htaccess($resource);
+  if (!$htaccess) return false;
+
+  // see if authorization is required
+  $require = $htaccess->getRequire();
+  if ($require == null)
+    return false;
+
+  // check passed headers
+  if (isset($_SERVER['PHP_AUTH_USER'])) {
     /*$str = base64_decode($_SERVER['HTTP_AUTHORIZATION']);
     $pos = strpos($str, ':');
     $user = substr($str, 0, $pos);
     $pw = substr($str, $pos+1);*/
+
     $user = $_SERVER['PHP_AUTH_USER'];
     $pw = $_SERVER['PHP_AUTH_PW'];
 
-    if (($htpasswd->validUser($user, $pw)) &&
-	( ($require[0] == HTACCESS_REQUIRE_VALID_USER) ||
-	  (($require[0] == HTACCESS_REQUIRE_USER) &&
-	   in_array($user, $require[1])) ||
-	  ((($htgroups->load() || true) &&
-	    ($require[0] == HTACCESS_REQUIRE_GROUP) &&
-	    in_array($user, $htgroups->getGroup($require[1]))) )))
-      // OK
-      return;
+    if (verify_view_authorization_check($htaccess, $user, $pw))
+      return true;
   }
   
   // send need for authorization requirement
@@ -72,7 +162,7 @@ function verify_view_authorization($resource) {
     exit();
   } else {
     // TODO: internal error: type not supported
-    return;
+    return false;
   }
 }
 
@@ -248,8 +338,9 @@ class htpasswd {
 
   function validUser($user, $password) {
     foreach ($this->lines as $line) {
-      if (preg_match('/^'.preg_quote($user).':(.*)/', $line, $matches))
+      if (preg_match('/^'.preg_quote($user).':(.*)/', $line, $matches)) {
 	return (crypt($password, substr($matches[1], 0, 2)) == $matches[1]);
+      }
     }
     return false;
   }

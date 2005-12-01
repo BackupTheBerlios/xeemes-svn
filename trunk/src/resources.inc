@@ -27,6 +27,8 @@ require_once('transformation.inc');
 require_once('wikipedia.inc');
 require_once('meta.inc');
 require_once('tags.inc');
+require_once('cache.inc');
+require_once('mime-types.inc');
 
 define('XEEMES_RESOURCE_UNKNOWN',    1);
 define('XEEMES_RESOURCE_XML',        2);
@@ -139,14 +141,6 @@ class Resource {
     return XEEMES_RESOURCE_UNKNOWN;
   }
 
-  function url() {
-    return XEEMES_BASE_URL.'data'.$this->location; // TODO illegal chars, encoding
-  }
-
-  function view_url() {
-    return XEEMES_BASE_URL.'view.php'.$this->location;
-  }
-
   function extensions() {
     return array();
   }
@@ -176,21 +170,38 @@ class Resource {
     return file_exists($this->filename);
   }
 
-  function stringContent() {
-    return file_get_contents($this->filename);
-  }
-
-  function isOriginal() {
+  function isUnmodified() {
     return true;
   }
 
+  function stringContent() {
+    ob_start();
+    $this->outputContent();
+    $result = ob_get_contents();
+    ob_end_clean();
+    return $result;
+  }
+
   function outputContent() {
-    if ($this->isOriginal())
-      // TODO: this is supposed to be slow; and not very suitable for
-      // very large files, resp. low bandwidths
-      readfile($this->filename);
+    readfile($this->filename);
+  }
+
+  function getContentType() {
+    /* this all doesn't work that well
+    // try to get mime type from 'file -b -i' (Linux only!)
+    $res = @exec('file -b -i '.escapeshellarg($this->filename), $lines);
+    if (($res == 0) && (count($lines) > 0))
+      return $lines[0];
+    else if (file_exists($this->filename))
+      return mime_content_type($this->filename);
     else
-      print($this->stringContent());
+      return 'application/octet-stream';
+    */
+    $type = mime_content_type_ex($this->filename);
+    if ($type)
+      return $type;
+    else
+      return 'application/octet-stream';
   }
 
   function getLocation() {
@@ -215,6 +226,16 @@ class Resource {
   function getParentResource() {
     return get_resource(dirname($this->location), array());
   }
+
+  function getCacheInvalidator() {
+    return new XeemesCacheInvalidator();
+  }
+
+  // return something if this resource doesn't exist
+  function getNotFoundData() {
+    // TODO: override for image resources
+    return '<html><body><h1>Not Found</h1><p>The requested location '.$this->location.' was not found.</p><hr>xeemes</body></html>';
+  }
 }
 
 // TODO: maybe move inline-code into classes
@@ -231,7 +252,33 @@ class XMLResource extends Resource {
   }
 
   function extensions() {
-    return array('xml', 'xsl');
+    return array('xml', 'xsl', 'xhtml');
+  }
+
+  function outputContent() {
+    $doc = $this->domContent();
+
+    //$this->process_instructions($doc); // TODO
+    XeemesTag::replaceTags($this, $doc->documentElement);
+
+    $layout_name = $this->get_meta('layout-name');
+    if (!$layout_name) $layout_name = 'default';
+    $layout_class = $this->get_meta('layout-class');
+    if ($layout_name) {
+      // class can be false
+      $layout = new Layout($layout_class, $layout_name);
+      $doc = $layout->process($doc, array('base-url' => XEEMES_BASE_URL));
+    }
+
+    // again after the layout transformation
+    //$this->process_instructions($doc); // TODO
+    XeemesTag::replaceTags($this, $doc->documentElement);
+    
+    print($doc->saveXML());
+  }
+
+  function isUnmodified() {
+    return false;
   }
 
   function domContent() {
@@ -246,6 +293,16 @@ class XMLResource extends Resource {
 
     return $doc;
   }
+
+  function getContentType() {
+    return 'text/html; charset=utf-8';
+  }
+
+  /* TODO: plus layout, everything that is included etc.
+  function getCacheInvalidator() {
+    return new XeemesCacheFileInvalidator($this->filename);
+  }
+  */
 }
 
 class HTMLResource extends XMLResource {
@@ -273,7 +330,7 @@ class WikipediaResource extends XMLResource {
     $parser = new WikipediaParser();
     // TODO: look at charset meta-data
     return $parser->parse(iconv('iso-8859-1', 'utf-8',
-				$this->stringContent()));
+				file_get_contents($this->filename)));
   }
 }
 
@@ -288,7 +345,7 @@ class DataResource extends Resource {
   }
 }
 
-class ImageResource extends Resource {
+abstract class ImageResource extends Resource {
   /* display inline with <img> tag */
   /* conversions with GD library */
 
@@ -296,11 +353,13 @@ class ImageResource extends Resource {
     return XEEMES_RESOURCE_IMAGE | parent::type();
   }
 
+  abstract function outputSameType($image);
+  abstract function imageContent();
+
   function outputContent() {
-    header('Content-Type: '.$this->contentType()); // this is abstract
     // TODO: size args
     if ($this->args['thumbnail'] == '1') {
-      $image = $this->imageContent(); // abstract
+      $image = $this->imageContent();
       $ow = imagesx($image); $oh = imagesy($image);
       $width = 100;
       $height = 100;
@@ -311,13 +370,25 @@ class ImageResource extends Resource {
 	$width = $width * $ow / $oh;
       $thumb = imagecreatetruecolor($width, $height);
       imagefilledrectangle($thumb, 0, 0, $width, $height, 16777215);
-      imagecopyresampled($thumb, $image, 0, 0, 0, 0, $width, $height, $ow, $oh);
+      imagecopyresampled($thumb, $image, 0, 0, 0, 0, $width, $height,
+			 $ow, $oh);
 
-      $this->outputSameType($thumb); // abstract
+      $this->outputSameType($thumb);
       imagedestroy($thumb);
       imagedestroy($image);
     } else
       parent::outputContent();
+  }
+
+  function isUnmodified() {
+    return (count($this->args) == 0); // more exact?
+  }
+
+  function getCacheInvalidator() {
+    if ($this->isUnmodified())
+      return new XeemesCacheInvalidator();
+    else
+      return new XeemesCacheFileInvalidator($this->filename);
   }
 }
 
@@ -334,7 +405,7 @@ class JPEGResource extends ImageResource {
     return imagecreatefromjpeg($this->filename);
   }
 
-  function contentType() {
+  function getContentType() {
     return "image/jpeg";
   }
 
@@ -356,7 +427,7 @@ class PNGResource extends ImageResource {
     return imagecreatefrompng($this->filename);
   }
 
-  function contentType() {
+  function getContentType() {
     return "image/png";
   }
 
@@ -378,7 +449,7 @@ class GIFResource extends ImageResource {
     return imagecreatefromgif($this->filename);
   }
 
-  function contentType() {
+  function getContentType() {
     return "image/gif";
   }
 
@@ -431,6 +502,7 @@ class DirectoryResource extends XMLResource {
       $filename = $path.$file;
       $pathinfo = pathinfo($filename);
       if (($file[0] != '.') &&
+	  ($file[0] != '_') &&
 	  ($pathinfo['extension'] != 'meta') &&
 	  (!in_array($pathinfo['basename'], $directory_indices)) &&
 	  ($file[strlen($file)-1] != '~')) {

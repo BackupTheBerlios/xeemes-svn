@@ -27,6 +27,15 @@ define('XEEMES_NS_URI', 'http://xeemes.org/schema');
 
 require_once('resources.inc');
 
+function view_url($location) {
+  // TODO: this can be done better, abstract this, or make configurable
+  // this should work for both mod_rewrite on and off
+  if (isset($_SERVER['REDIRECT_URL']))
+    return XEEMES_BASE_URL.substr($location, 1); // strip '/'
+  else
+    return XEEMES_BASE_URL.'view.php'.$location;
+}
+
 function parse_url_arguments($spec) {
   $defs = explode('&', $spec);
   $result = array();
@@ -153,7 +162,7 @@ class XeemesResourceTag extends XeemesTag {
       }
     } else if (($type & XEEMES_RESOURCE_IMAGE) > 0) {
       $img = $doc->createElement('img');
-      $url = XEEMES_BASE_URL.'view.php'.$iresource->getLocation();
+      $url = view_url($iresource->getLocation());
       // TODO: size, frame, etc.
       // TODO: prepend or append args to not override user-defined args?
       if ($attrs['special'] == 'thumbnail')
@@ -187,13 +196,14 @@ class XeemesResourceTag extends XeemesTag {
       $content []= $doc->createTextNode($iresource->getName());
     
     $link = $doc->createElement('a');
-    $href = XEEMES_BASE_URL.'view.php'.$ilocation;
+    $href = view_url($ilocation);
     if (count($args) > 0)
       $href .= '?'.unparse_url_arguments($args);
     $link->setAttribute('href', $href);
-    $link->setAttribute('class', 'xeemes-internal');
     foreach ($content as $node)
       $link->appendChild($node);
+    if (!$link->hasAttribute('class'))
+      $link->setAttribute('class', 'xeemes-internal');
     return $link;
   }
 
@@ -254,33 +264,55 @@ class XeemesGalleryTag extends XeemesTag {
     if (!isset($attrs['location']))
       return XeemesTag::error($doc, 'Gallery location not defined');
     $slocation = $attrs['location'];
+    $location = $resource->getLocation();
 
     $res = get_resource($slocation, array(), $resource->getLocation());
     if (!$res->exists())
       return XeemesTag::error('Gallery location not found: '.
 			      $res->getLocation());
-    $location = $res->getLocation();
   
-    $locations = self::find_locations($location, true);
+    $locations = self::find_locations($res->getLocation(), true);
+
+    $columns = max(isset($attrs['columns']) ? $attrs['columns'] : 6, 1);
+    $per_page = max(isset($attrs['images-per-page']) ?
+		    $attrs['images-per-page'] : 30, 1);
 
     if (isset($resource->args['image'])) { // TODO: maybe separate
 					   // resource and request args?
-      /* view single image */
-      $index = $resource->args['image'];
       $rt = new XeemesResourceTag();
-      $res = $rt->toNode($resource, $doc,
-			 array('location' => $locations[$index],
-			       'display' => 'inline'));
-      // TODO: navigation
+
+      $result = $doc->createElement('div');
+      $result->setAttribute('class', 'xeemes-gallery-image');
+
+      $index = $resource->args['image'];
       $nexti = ($index + 1) % count($locations);
       $previ = (count($locations) + $index - 1) % count($locations);
 
-      return $res;
+      /* links backwards, up and forward */
+      $a = $rt->toNode($resource, $doc,
+		       array('location' => $location,
+			     'arguments' => 'image='.$previ));
+      $a->setAttribute('id', 'back');
+      $result->appendChild($a);
+      $a = $rt->toNode($resource, $doc,
+		       array('location' => $location,
+			     'arguments' => 'page='.floor($index / $per_page)));
+      $a->setAttribute('id', 'up');
+      $result->appendChild($a);
+      $a = $rt->toNode($resource, $doc,
+		       array('location' => $location,
+			     'arguments' => 'image='.$nexti));
+      $a->setAttribute('id', 'forward');
+      $result->appendChild($a);
+      
+      /* view single image */
+      $result->appendChild($rt->toNode($resource, $doc,
+				       array('location' => $locations[$index],
+					     'display' => 'inline')));
+
+      return $result;
     } else {
       /* overview page */
-      $columns = max(isset($attrs['columns']) ? $attrs['columns'] : 6, 1);
-      $per_page = max(isset($attrs['images-per-page']) ?
-	$attrs['images-per-page'] : 30, 1);
 
       if (isset($resource->args['page']))
 	$page = $resource->args['page'];
@@ -290,30 +322,36 @@ class XeemesGalleryTag extends XeemesTag {
       $num_pages = count($locations)/$per_page;
 
       $results = array();
+
       /* links to the pages */
-      $rt = new XeemesResourceTag();
-      $links = $doc->createElement('div');
-      $links->setAttribute('class', 'xeemes-gallery-page-links');
-      for ($i = 0; $i < $num_pages; $i++) {
-	$lnk = $rt->toNode($resource, $doc,
-			   array('location' => $resource->getLocation(),
-				 'arguments' => 'page='.$i),
-			   array($doc->createTextNode($i+1)));
-	$links->appendChild($lnk);
+      if ($num_pages > 1) {
+	$rt = new XeemesResourceTag();
+	$links = $doc->createElement('div');
+	$links->setAttribute('class', 'xeemes-gallery-page-links');
+	for ($i = 0; $i < $num_pages; $i++) {
+	  $lnk = $rt->toNode($resource, $doc,
+			     array('location' => $location,
+				   'arguments' => 'page='.$i),
+			     array($doc->createTextNode($i+1)));
+	  $links->appendChild($lnk);
+	}
+	$results []= $links;
       }
-      $results []= $links;
       
       /* thumbnails of images on this page */
       $thumbnails = array();
-      for ($i = $page * $per_page;
-	   $i < min($per_page, count($locations) - ($page * $per_page));
+      $fromi = $page * $per_page;
+      $toi = min($fromi + $per_page,
+		 $fromi + count($locations) - ($page * $per_page));
+      for ($i = $fromi;
+	   $i < $toi;
 	   $i++) {
 	$img = $rt->toNode($resource, $doc,
 			   array('location' => $locations[$i],
 				 'display' => 'inline',
 				 'special' => 'thumbnail'));
 	$lnk = $rt->toNode($resource, $doc,
-			   array('location' => $resource->getLocation(),
+			   array('location' => $location,
 				 'arguments' => 'image='.$i),
 			   array($img));
 	$thumbnails []= $lnk;
@@ -329,7 +367,7 @@ class XeemesGalleryTag extends XeemesTag {
 	$td = $tr->appendChild($doc->createElement('td'));
 	$td->appendChild($thumb);
 
-	$row = ($row+1) % ($per_page / $columns);
+	$row = ($row+1) % $columns;
       }
       $results []= $table;
       

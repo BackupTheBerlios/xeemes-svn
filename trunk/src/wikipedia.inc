@@ -119,20 +119,66 @@ class WikipediaParser {
       $hr = $this->document->createElement('hr');
       $line->parentNode->replaceChild($hr, $line);
       return $hr->nextSibling;
-    } else if (!$line->hasChildNodes()) {
+    } else if ((!$line->hasChildNodes()) ||
+	       (($line->firstChild->nodeType == XML_TEXT_NODE) &&
+		($line->firstChild->textContent == ''))) {
       $pbr = $this->document->createElement('pbr');
       $line->parentNode->replaceChild($pbr, $line);
       return $pbr->nextSibling;
+    }
+    // multi-liners: lists, indentation, definition-lists, tables
+    else if (($line->firstChild->nodeType == XML_TEXT_NODE) &&
+	     (preg_match('/^([\*#:;])/', $line->firstChild->data, $matches))) {
+      return $this->process_next_multiliner($line, $matches[1]);
     } else {
       foreach (nodelist2array($line->childNodes) as $child) {
 	$line->removeChild($child);
 	$line->parentNode->insertBefore($child, $line);
       }
+      $line->parentNode->
+	insertBefore($line->ownerDocument->createTextNode("\n"), $line);
       $next = $line->nextSibling;
       $line->parentNode->removeChild($line);
       return $next;
     }
-    // TODO: multi-liners: lists, indentation, definition-lists, tables
+  }
+
+  function process_next_multiliner($start_line, $type) {
+    // first, get all following lines of this type
+    $lines = array($start_line);
+    $next = $start_line->nextSibling;
+    while ($next && ($next->firstChild->nodeType == XML_TEXT_NODE) &&
+	   ($next->firstChild->data[0] == $type)) {
+      $lines []= $next;
+      $thisn = $next;
+      $next = $next->nextSibling;
+      $thisn->parentNode->removeChild($thisn);
+    }
+    $result = $next;
+
+    // now separate from content (TODO: in one step with 1?)
+    $things = array();
+    foreach ($lines as $line) {
+      $text = $line->firstChild;
+      preg_match('/^([\*#:;])(.*)$/', $text->data, $matches);
+      $text->data = $matches[2];
+      $things []= array($matches[1], $line);
+    }
+
+    // TODO: more complex and other lists
+    $doc = $start_line->ownerDocument;
+    $comp = $doc->createElement('ul');
+    foreach ($things as $tcontent) {
+      $content = $tcontent[1];
+      $li = $doc->createElement('li');
+      foreach (nodelist2array($content->childNodes) as $child) {
+	$li->appendChild($content->removeChild($child));
+      }
+      $comp->appendChild($li);
+    }
+    $start_line->parentNode->replaceChild($comp, $start_line);
+
+    return $result;
   }
 
   function process_header($line, $depth) {
@@ -226,15 +272,17 @@ class WikipediaParser {
 	$last = $child;
       }
       $node->parentNode->removeChild($node);
-      return $last->nextSibling;
+      //return $last->nextSibling;
     } else if (($node->nodeType == XML_ELEMENT_NODE) &&
 	       ($node->nodeName != 'nowiki')) {
       $child = $node->firstChild;
       while ($child) {
-	$child = $this->process_inliners($child);
+	$next = $child->nextSibling;
+	$this->process_inliners($child);
+	$child = $next;
       }
     }
-    return $node->nextSibling;
+    //return $node->nextSibling;
   }
 
   /** */

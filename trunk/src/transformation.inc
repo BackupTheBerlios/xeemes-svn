@@ -90,10 +90,14 @@ function xeemes_current_resource($include_subs = 0) {
   return $doc;
 }
 
-function xeemes_parent_resource($include_subs = 0) {
+function xeemes_parent_resource($include_subs = 0, $more_up = 0) {
   global $xeemes_current_resource;
   $doc = new DOMDocument('1.0', 'utf-8');
   $parent = $xeemes_current_resource->getParentResource();
+  while ($more_up > 0) {
+    $parent = $parent->getParentResource();
+    $more_up--;
+  }
   $doc->appendChild(resource_xml_representation($parent, $doc,
 						$include_subs));
   return $doc;
